@@ -1,0 +1,61 @@
+employee_id,employee_name,department,job_title,hire_date,termination_date,employment_status,is_full_time
+EMP1001,Emily Reed,Programs,Program Manager,2024-01-27,,active,False
+EMP1002,Brandon Parker,IT,Data Analyst,2023-03-22,,active,True
+EMP1003,Eric Smith,Programs,Director of Programs,2022-02-19,,active,True
+EMP1004,Brandy Mitchell,IT,Systems Administrator,2025-07-26,,active,True
+EMP1005,Thomas Arroyo,IT,Data Analyst,2023-03-08,,active,False
+EMP1006,Ralph Yates,Finance,Controller,2022-09-09,,active,True
+EMP1007,Adam Brooks,Executive,Chief Operating Officer,2023-09-16,,active,True
+EMP1008,Jessica Wright,,Chief Operating Officer,2022-02-18,,active,True
+EMP1009,Jean Gray,HR,HR Generalist,2024-09-17,,active,True
+EMP1010,Mario Black,Programs,Program Manager,2020-11-13,,active,True
+EMP1011,Rhonda Cohen,Development,Grants Manager,2025-06-08,,active,True
+EMP1012,Kim Adams,Executive,Chief Operating Officer,2021-01-19,,active,True
+EMP1013,Catherine Roberts,IT,Data Analyst,2020-03-25,,active,True
+EMP1014,Jesse Graves,,Director of Programs,2024-01-18,,active,True
+EMP1015,Alec Williams,Development,Development Coordinator,2022-10-25,,active,True
+EMP1016,William Campbell,HR,Recruiter,2023-03-08,,active,True
+EMP1017,Monica Hall,Finance,Staff Accountant,2019-09-11,,active,True
+EMP1018,Daniel Fisher,IT,Systems Administrator,2019-11-30,,active,True
+EMP1019,Yolanda Ford,Development,Development Officer,2025-04-25,,active,True
+EMP1020,Bobby Christensen,Finance,Staff Accountant,2025-05-12,,active,True
+EMP1021,Reginald Jones,Development,Development Officer,2019-11-15,,active,True
+EMP1022,Steven Wright,Development,Director of Development,2022-08-18,,active,True
+EMP1023,Barbara Tate,Programs,Program Manager,2021-11-16,,active,False
+EMP1024,William Wright,IT,Data Analyst,2020-09-30,,active,False
+EMP1025,Nicolas Davis,,Finance Manager,2018-12-01,,active,True
+EMP1026,Mrs. Melanie Collins,IT,IT Support Specialist,2024-04-18,,active,True
+EMP1027,Nicholas Garner,HR,HR Generalist,2021-05-18,,active,True
+EMP1028,John Evans,HR,HR Manager,2023-04-22,2025-07-09,terminated,True
+EMP1029,Sharon Robinson,Programs,Program Manager,2021-09-11,,active,False
+EMP1030,Jeffrey Smith,HR,Recruiter,2019-08-04,,active,False
+EMP1031,Bryan Mccormick,Executive,Chief Operating Officer,2025-05-22,,active,False
+EMP1032,Lauren Vazquez,Programs,Program Manager,2018-09-15,,active,True
+EMP1033,Brandon Moore,Finance,Staff Accountant,2024-06-26,2025-02-21,terminated,True
+EMP1034,Gina Booker,Finance,Staff Accountant,2019-05-29,,active,True
+EMP1035,Amy Newman,Executive,Chief Operating Officer,2025-02-02,,active,True
+EMP1036,Ashley Freeman,IT,Data Analyst,2024-08-05,,active,False
+EMP1037,Dr. Nicole Trujillo,,IT Support Specialist,2021-04-29,,active,True
+EMP1038,Alison Gray,HR,Recruiter,2022-05-13,,active,False
+EMP1039,Steven Washington,Executive,Executive Director,2024-10-16,,active,True
+EMP1040,Kimberly Henry,HR,Recruiter,2022-05-09,,active,False
+EMP1041,Gregory Oconnor,HR,HR Generalist,2023-06-14,,active,True
+EMP1042,Linda Valencia,HR,Recruiter,2020-12-21,,active,True
+EMP1043,Christopher Phillips,Programs,Advisor,2019-12-30,,active,True
+EMP1044,Jordan Parsons,Finance,Controller,2020-11-14,,active,True
+EMP1045,Cody Smith,Finance,Finance Manager,2022-12-07,,active,True
+EMP1046,Manuel Flores,HR,HR Generalist,2025-12-02,,active,False
+EMP1047,Kimberly Hughes,IT,IT Support Specialist,2019-03-03,,active,True
+EMP1048,Pamela Moore,HR,Recruiter,2023-02-02,,active,True
+EMP1049,Frank Davis,Finance,Finance Manager,2021-01-14,2023-10-13,terminated,True
+EMP1050,Todd White,Programs,Director of Programs,2024-03-27,2024-07-08,terminated,False
+EMP1051,John Garcia,HR,HR Generalist,2018-11-24,,active,True
+EMP1052,Jasmine Burns,Programs,Program Coordinator,2023-06-28,,active,True
+EMP1053,Dawn Diaz,Development,Development Officer,2023-12-09,,active,True
+EMP1054,Alexis Mccall,Development,Development Officer,2023-10-14,,active,True
+EMP1055,Sandra Mcdonald,Finance,Staff Accountant,2024-03-17,2026-04-19,terminated,True
+EMP1056,Justin Hurley,Programs,Advisor,2024-01-25,,active,True
+EMP1057,Rebecca Brown,IT,Data Analyst,2022-03-03,,active,True
+EMP1058,Morgan Davenport,IT,Systems Administrator,2023-11-17,2025-01-02,terminated,True
+EMP1059,Toni Davis,HR,HR Generalist,2019-04-18,,active,True
+EMP1060,James Lee,,Recruiter,2024-10-19,,active,True
