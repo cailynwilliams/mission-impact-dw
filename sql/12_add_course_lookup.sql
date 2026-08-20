@@ -1,7 +1,7 @@
 /*==============================================================
   MissionImpactDW - Patch: course code lookup
   Purpose: The Kaggle source uses anonymized course codes
-           (1..17), with no published program names.
+           with no published program names.
            This adds a small reference table that maps
            each code to a readable program name and area, so
            reporting doesn't have to display raw codes.
@@ -34,8 +34,7 @@ GO
 
 
 /*--------------------------------------------------------------
-  Direct load - simpler than a Python script for a static
-  17-row reference table. Truncate + insert makes it idempotent.
+  Direct load.
 --------------------------------------------------------------*/
 TRUNCATE TABLE stg.course_lookup_raw;
 GO
