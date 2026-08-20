@@ -1,23 +1,16 @@
 /*==============================================================
   MissionImpactDW - Reporting Layer (rpt schema)
+
   Purpose: Governed, documented views that expose the warehouse
-           to analysts and Power BI. This is the "single source
-           of truth" layer - every KPI is defined here exactly
-           once, so no team can accidentally compute a
-           different number for the same metric.
+           to analysts and Power BI. 
 
   Conventions:
     - Every view has a header block: purpose, grain, owner,
-      metric definitions. That's the data dictionary for this
-      view, colocated with its code so they can't drift apart.
-    - Views JOIN through surrogate keys (never business keys).
+      metric definitions. 
+    - Views JOIN through surrogate keys.
     - No view exposes raw warehouse audit columns
-      (load_batch_id, dw_created_at_utc, etc.) - those are
-      internal, not business-relevant.
     - Views are the ONLY thing analysts and Power BI should
-      query. Direct queries against dw.* would bypass the
-      governed definitions - that's what a permissions model
-      enforces later.
+      query.
 
   Idempotent: uses CREATE OR ALTER (available SQL Server 2016+).
 ==============================================================*/
@@ -33,9 +26,7 @@ GO
   PURPOSE: The canonical student-level view for reporting.
            Combines demographics from dim_student with the
            final outcome and both terms' performance flattened
-           back into one row - because analysts asking "show
-           me every student and how they did" don't want to
-           write the join themselves every time.
+           back into one row.
 
   METRICS EXPOSED:
     outcome_status         - Dropout / Enrolled / Graduate
@@ -222,8 +213,7 @@ GO
 PRINT 'Reporting views created.';
 GO
 
--- List every view now in rpt, with row counts, so you can confirm
--- they all built and return data
+
 SELECT
     v.name AS view_name,
     (SELECT COUNT(*) FROM sys.dm_sql_referenced_entities('rpt.' + v.name, 'OBJECT')) AS refs
@@ -233,7 +223,7 @@ WHERE s.name = 'rpt'
 ORDER BY v.name;
 GO
 
--- Quick smoke test: hit each view with a small SELECT
+
 SELECT TOP 3 * FROM rpt.vw_student_summary;
 SELECT * FROM rpt.vw_dropout_rate_by_program ORDER BY dropout_rate_pct DESC;
 SELECT * FROM rpt.vw_donations_by_fiscal_year ORDER BY fiscal_year;

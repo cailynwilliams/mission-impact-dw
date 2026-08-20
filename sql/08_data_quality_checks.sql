@@ -2,7 +2,7 @@
   MissionImpactDW - Data Quality Checks
   Purpose: A battery of standard checks run after every load,
            logged to ops.data_quality_result so results are
-           queryable history, not just console output.
+           queryable history.
 
   Categories covered (the standard six, from the survival
   guide): Completeness, Uniqueness, Validity, Consistency,
@@ -14,8 +14,7 @@
     'Warning' - worth knowing about, doesn't block the load.
                 Most of the checks below are Warning, because
                 the Unknown-member pattern already keeps orphan
-                rows from breaking anything - these checks are
-                about VISIBILITY, not blocking.
+                rows from breaking anything.
 
   Run AFTER 07_transform_facts.sql.
 ==============================================================*/
@@ -28,8 +27,7 @@ DECLARE @batch_id UNIQUEIDENTIFIER = NEWID();
 /*--------------------------------------------------------------
   CHECK 1 - Completeness: row count reconciliation
   Staging row count should equal warehouse row count for each
-  source. A mismatch means rows were silently dropped somewhere
-  in the transform - the cheapest, highest-value check there is.
+  source.
 --------------------------------------------------------------*/
 INSERT INTO ops.data_quality_result
     (load_batch_id, check_name, check_category, target_object,
@@ -215,8 +213,7 @@ WHERE hours_logged IS NOT NULL
   CHECK 6 - Timeliness: staging freshness
   Flags if the most recent staging load is older than expected.
   Threshold set generously (7 days) since this is a manually-run
-  portfolio pipeline, not a nightly production job - in
-  production this would be tightened to match the real SLA.
+  portfolio pipeline.
 --------------------------------------------------------------*/
 INSERT INTO ops.data_quality_result
     (load_batch_id, check_name, check_category, target_object,
@@ -232,10 +229,6 @@ FROM stg.student_raw;
 GO
 
 
-/*==============================================================
-  SUMMARY - what you'd actually screenshot for a README or show
-  in an interview. One row per check, pass/fail, plain English.
-==============================================================*/
 SELECT
     check_name,
     check_category,
@@ -251,7 +244,7 @@ ORDER BY
     check_name;
 GO
 
--- Overall pass rate - a single number for a dashboard tile
+--  a single number for a dashboard tile
 SELECT
     COUNT(*) AS total_checks,
     SUM(CASE WHEN check_passed = 1 THEN 1 ELSE 0 END) AS checks_passed,

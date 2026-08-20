@@ -19,7 +19,7 @@ GO
   the unpivot: it's what gives the warehouse a time axis the
   source file never had, which is what makes "did this
   student's performance drop between terms" a queryable
-  question instead of two disconnected numbers.
+  question.
 --------------------------------------------------------------*/
 MERGE dw.fact_student_term AS tgt
 USING (
@@ -76,9 +76,6 @@ GO
 /*--------------------------------------------------------------
   dw.fact_student_outcome
   GRAIN: one row per student.
-  The ML target lives here - kept separate from term-level
-  performance because it's a single terminal result, not a
-  repeating measurement.
 --------------------------------------------------------------*/
 MERGE dw.fact_student_outcome AS tgt
 USING (
