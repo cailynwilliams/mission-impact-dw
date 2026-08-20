@@ -136,6 +136,17 @@ def load_table(cur, log_cur, batch_id, csv_path: Path, stg_table: str,
             for col in extra_null_cols:
                 df[col] = None
 
+        # The Kaggle dropout source has no student ID column at all - it's
+        # anonymous rows. dim_student needs a business key, so we generate
+        # one here, stable only because this source file's row order
+        # doesn't change between runs. That's a documented limitation, not
+        # a hidden one: a real source system would be expected to provide
+        # its own durable key, and this is exactly the kind of gap a data
+        # governance conversation with an upstream team would need to
+        # close in production.
+        if stg_table == "stg.student_raw":
+            df.insert(0, "student_id", [f"STU{i:05d}" for i in range(1, len(df) + 1)])
+
         df["src_file_name"] = csv_path.name
         df["load_batch_id"] = str(batch_id)
 
