@@ -69,9 +69,9 @@ GO
   dw.fact_student_risk_score
   --------------------------------------------------------------
   GRAIN: one row per student per model_run_id.
-  PURPOSE: Persistent store of model predictions. Every scoring
+  PURPOSE: Persistent store of model predictions. Each scoring
            run stamps its own run id, so predictions from
-           different model versions can coexist and be compared.
+           different model versions can be compared.
 ==============================================================*/
 IF OBJECT_ID('dw.fact_student_risk_score','U') IS NULL
 BEGIN
@@ -114,11 +114,7 @@ GO
   rpt.vw_student_risk_latest
   --------------------------------------------------------------
   GRAIN: one row per student, from the most recent scoring run.
-  PURPOSE: The consumption layer for the risk model - what
-           Power BI, analysts, and program staff would query.
-           Joins to student demographics so consumers get a
-           complete picture without knowing about the star
-           schema underneath.
+  PURPOSE: The consumption layer for the risk model 
 ==============================================================*/
 CREATE OR ALTER VIEW rpt.vw_student_risk_latest AS
 WITH latest_run AS (

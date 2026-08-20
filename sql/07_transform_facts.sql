@@ -2,7 +2,7 @@
   MissionImpactDW - Transform: stg -> dw (Facts)
   Purpose: Populate fact tables from staging + dimensions.
   Notes:   Idempotent via MERGE, same pattern as dimensions.
-  Run AFTER 06_transform_dimensions.sql.
+
 ==============================================================*/
 
 USE MissionImpactDW;
@@ -12,14 +12,6 @@ GO
   dw.fact_student_term
   GRAIN: one row per student per semester.
 
-  The source is one flat row per student with separate sem1_*
-  and sem2_* columns. UNION ALL of two SELECTs - one reading
-  the sem1_* columns, one reading sem2_* - turns that single
-  row into two, each tagged with its own term_number. This is
-  the unpivot: it's what gives the warehouse a time axis the
-  source file never had, which is what makes "did this
-  student's performance drop between terms" a queryable
-  question.
 --------------------------------------------------------------*/
 MERGE dw.fact_student_term AS tgt
 USING (
@@ -110,24 +102,13 @@ GO
   dw.fact_donation
   GRAIN: one row per donation transaction.
 
-  Orphan handling in action: a donation whose donor_id doesn't
-  match any row in dim_donor resolves to the Unknown donor (-1)
-  via LEFT JOIN + ISNULL, rather than being silently dropped.
-  The dollar amount still counts toward totals; a data quality
-  check (built next) is what surfaces these for follow-up.
+  Orphan handling 
 --------------------------------------------------------------*/
 MERGE dw.fact_donation AS tgt
 USING (
     -- Deduplicate on donation_id before merging. The synthetic generator
-    -- deliberately injects duplicate donation rows (see
-    -- generate_synthetic_data.py, PCT_DONATIONS_DUPLICATE) so the data
-    -- quality checks have something real to catch. MERGE itself will
-    -- reject two source rows sharing a key in the same statement - so
-    -- dedup has to happen here, before the merge, not after. Keeping the
-    -- first occurrence (by donation_id, arbitrary but deterministic tie-
-    -- break) is a defensible policy for exact duplicates: same
-    -- donation_id, same amount, same everything, so no information is
-    -- lost by dropping the extras.
+    -- deliberately injects duplicate donation rows so the data
+    -- quality checks have something real to catch.
     SELECT donation_id, donor_key, date_key, campaign, payment_method,
            is_recurring, amount
     FROM (
@@ -197,10 +178,8 @@ GO
 PRINT 'Facts loaded from staging.';
 GO
 
--- Log the duplicate donations we deliberately dropped during dedup, so
--- there's an auditable record rather than a silent drop. In a real
--- pipeline this would run inside the same batch as the merge above;
--- kept separate here for readability.
+-- Log the duplicate donationsdeliberately dropped during dedup so
+-- there's an auditable record.
 DECLARE @dupe_count INT;
 SELECT @dupe_count = COUNT(*) - COUNT(DISTINCT donation_id)
 FROM stg.donation_raw;

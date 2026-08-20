@@ -12,7 +12,7 @@
     - Views are the ONLY thing analysts and Power BI should
       query.
 
-  Idempotent: uses CREATE OR ALTER (available SQL Server 2016+).
+  Idempotent: uses CREATE OR ALTER
 ==============================================================*/
 
 USE MissionImpactDW;
@@ -24,23 +24,6 @@ GO
   GRAIN: one row per student.
   OWNER: Data Infrastructure team.
   PURPOSE: The canonical student-level view for reporting.
-           Combines demographics from dim_student with the
-           final outcome and both terms' performance flattened
-           back into one row.
-
-  METRICS EXPOSED:
-    outcome_status         - Dropout / Enrolled / Graduate
-    is_dropout             - 1 if outcome_status = 'Dropout',
-                             else 0. Defined ONCE here, so
-                             every dropout-rate calculation
-                             uses the same denominator.
-    sem1_approval_rate     - units approved / units enrolled,
-                             term 1. Null if enrolled = 0.
-    sem2_approval_rate     - same, term 2.
-    approval_rate_delta    - sem2 minus sem1. Negative =
-                             performance dropped between
-                             terms. Key feature for the risk
-                             model.
 ==============================================================*/
 CREATE OR ALTER VIEW rpt.vw_student_summary AS
 SELECT
@@ -88,10 +71,6 @@ GO
     dropout_rate = students marked 'Dropout' / total students,
                     per program. Excludes Unknown program.
     Denominator: only students with a resolved outcome.
-
-  The kind of thing that would normally get computed slightly
-  differently by three different people in three different
-  reports. Defined once, here.
 ==============================================================*/
 CREATE OR ALTER VIEW rpt.vw_dropout_rate_by_program AS
 SELECT
@@ -113,8 +92,7 @@ GO
   GRAIN: one row per fiscal year.
   METRICS: total dollars raised, number of gifts, unique donor
            count, average gift size.
-  Fiscal year comes from dim_date (defined once there - the
-  point of a conformed dimension).
+  Fiscal year comes from dim_date
 ==============================================================*/
 CREATE OR ALTER VIEW rpt.vw_donations_by_fiscal_year AS
 SELECT

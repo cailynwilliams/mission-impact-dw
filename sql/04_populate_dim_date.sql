@@ -2,12 +2,6 @@
   MissionImpactDW - Populate dim_date
   Purpose: Fills the date dimension for 2015-01-01 .. 2030-12-31.
   Notes:   Idempotent. Inserts only dates not already present.
-
-  Fiscal year assumption: FY runs July 1 - June 30, and is
-  named for the ending calendar year (July 2025 = FY2026).
-  This is the most common US nonprofit convention. If the
-  organization uses a different one, this is the single place
-  it changes - which is the point of a conformed dimension.
 ==============================================================*/
 
 USE MissionImpactDW;

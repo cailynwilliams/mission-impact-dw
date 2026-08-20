@@ -1,17 +1,8 @@
 /*==============================================================
   MissionImpactDW - Patch: reporting-cleaned donations view
   Purpose: rpt.vw_donations_by_fiscal_year is the RAW view.
-           It exposes everything including outliers, so anomaly
-           detection queries and data quality reporting can see
-           the full picture.
-
-           This adds a CLEAN version that excludes flagged
-           outliers, so business dashboards report on trusted
-           donations only. .
-
-           A separate diagnostic view surfaces WHAT got
-           excluded and WHY, so nothing is hidden from
-           governance. Users can always audit the filter.
+           It exposes everything so that data quality reporting
+           can see the full picture.
 
   Notes:   Idempotent via CREATE OR ALTER.
 ==============================================================*/
@@ -21,8 +12,6 @@ GO
 
 /*--------------------------------------------------------------
   rpt.vw_donations_by_fiscal_year_clean
-  Same shape as vw_donations_by_fiscal_year, but excludes
-  donations flagged by the amount-outlier data quality check
 --------------------------------------------------------------*/
 CREATE OR ALTER VIEW rpt.vw_donations_by_fiscal_year_clean AS
 SELECT

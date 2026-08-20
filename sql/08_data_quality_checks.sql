@@ -4,19 +4,10 @@
            logged to ops.data_quality_result so results are
            queryable history.
 
-  Categories covered (the standard six, from the survival
-  guide): Completeness, Uniqueness, Validity, Consistency,
-  Accuracy (proxy via range checks), Timeliness.
-
   Severity convention:
-    'Error'   - would fail a real pipeline; data is wrong or
-                unusable if this check fails.
+    'Error'   - data is wrong or unusable if this check fails.
     'Warning' - worth knowing about, doesn't block the load.
-                Most of the checks below are Warning, because
-                the Unknown-member pattern already keeps orphan
-                rows from breaking anything.
-
-  Run AFTER 07_transform_facts.sql.
+              
 ==============================================================*/
 
 USE MissionImpactDW;
@@ -26,8 +17,6 @@ DECLARE @batch_id UNIQUEIDENTIFIER = NEWID();
 
 /*--------------------------------------------------------------
   CHECK 1 - Completeness: row count reconciliation
-  Staging row count should equal warehouse row count for each
-  source.
 --------------------------------------------------------------*/
 INSERT INTO ops.data_quality_result
     (load_batch_id, check_name, check_category, target_object,
@@ -80,12 +69,6 @@ SELECT
             = (SELECT COUNT(*) FROM dw.dim_employee WHERE employee_key <> -1)
          THEN 1 ELSE 0 END;
 
--- fact_donation is EXPECTED to be smaller than stg.donation_raw, because
--- we deliberately dedupe exact-duplicate donation_ids during the merge.
--- So this check's "expected" isn't equality - it's stg_count minus the
--- known duplicate count. Encoding that here (rather than just comparing
--- for equality) is what makes this check meaningful instead of a false
--- alarm every single run.
 INSERT INTO ops.data_quality_result
     (load_batch_id, check_name, check_category, target_object,
      severity, expected_value, actual_value, failed_row_count, check_passed)
@@ -146,11 +129,7 @@ FROM stg.donation_raw;
 
 
 /*--------------------------------------------------------------
-  CHECK 4 - Consistency: referential integrity (orphaned facts)
-  Rows resolved to the Unknown member (-1). Not blocking - by
-  design, per the Unknown-member pattern - but worth counting
-  and watching. A spike run-over-run would indicate an upstream
-  source problem worth investigating.
+  CHECK 4 - Consistency
 --------------------------------------------------------------*/
 INSERT INTO ops.data_quality_result
     (load_batch_id, check_name, check_category, target_object,
@@ -212,8 +191,6 @@ WHERE hours_logged IS NOT NULL
 /*--------------------------------------------------------------
   CHECK 6 - Timeliness: staging freshness
   Flags if the most recent staging load is older than expected.
-  Threshold set generously (7 days) since this is a manually-run
-  portfolio pipeline.
 --------------------------------------------------------------*/
 INSERT INTO ops.data_quality_result
     (load_batch_id, check_name, check_category, target_object,

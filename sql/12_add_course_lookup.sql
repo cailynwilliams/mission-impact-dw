@@ -2,12 +2,10 @@
   MissionImpactDW - Patch: course code lookup
   Purpose: The Kaggle source uses anonymized course codes
            with no published program names.
-           This adds a small reference table that maps
-           each code to a readable program name and area, so
-           reporting doesn't have to display raw codes.
+           This adds a reference table that maps
+           each code to a readable program name and area.
 
-           Names are illustrative for the fictional Mission
-           Impact Foundation 
+           Names are illustrative
 
   Notes:   Creates the staging table. 
 ==============================================================*/
