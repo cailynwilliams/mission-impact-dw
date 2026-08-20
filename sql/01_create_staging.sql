@@ -3,14 +3,6 @@
   Purpose: Raw landing tables. Mirror source shape exactly.
            Wide, permissive types, no constraints.
   Notes:   Idempotent - safe to re-run.
-
-  Design rationale:
-    Staging columns are NVARCHAR because source files lie.
-    Type casting and validation happen on the way OUT of
-    staging, not on the way in. This means a bad value in a
-    source file fails a data quality check with a readable
-    error, instead of blowing up the load with a conversion
-    error and telling us nothing about which row was bad.
 ==============================================================*/
 
 USE MissionImpactDW;
@@ -27,7 +19,7 @@ GO
 /*--------------------------------------------------------------
   stg.student_raw
   Source: Kaggle - Predict Students' Dropout and Academic Success
-  Grain:  one row per student (as delivered by source)
+  Grain:  one row per student (as delivered)
 --------------------------------------------------------------*/
 DROP TABLE IF EXISTS stg.student_raw;
 GO
