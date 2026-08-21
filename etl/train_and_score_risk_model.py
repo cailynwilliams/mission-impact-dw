@@ -1,20 +1,12 @@
 """
 train_and_score_risk_model.py
 
-MissionImpactDW - Dropout Risk Model
---------------------------------------------------------------
-Trains a classifier on rpt.vw_student_risk_features and writes
-predictions to dw.fact_student_risk_score.
+Trains a dropout risk classifier on rpt.vw_student_risk_training
+and writes predictions for every student in rpt.vw_student_risk_features
+to dw.fact_student_risk_score.
 
-Notes:
-    - Runs like an ETL job: logs to ops.etl_run_log, stamps
-      every run with a UUID, and can be re-run safely.
-    - Trains logistic regression and gradient boosting, keeps
-      whichever has the best test AUC.
-    - Features are ONLY from term 1 - never term 2. Using
-      term 2 to predict dropout would be data leakage.
-    - No SMOTE / class weighting. 32/68 split isn't severe
-      enough to need it. Revisit if the model underperforms.
+Runs like an ETL job - logs every step to ops.etl_run_log, stamps
+runs with a UUID, safe to re-run.
 
 Run:
     python train_and_score_risk_model.py
@@ -36,7 +28,7 @@ from sklearn.metrics import (roc_auc_score, precision_score, recall_score,
 from db_config import get_connection
 
 PIPELINE_NAME = "train_and_score_risk_model"
-MODEL_VERSION = "v1"
+MODEL_VERSION = "v2"
 RANDOM_STATE = 42
 HIGH_RISK_THRESHOLD = 0.60
 MEDIUM_RISK_THRESHOLD = 0.30
@@ -46,7 +38,7 @@ KEY_COLUMNS = ["student_key", "student_id"]
 
 def log_step(log_cur, batch_id, step_name, target_object, started_at,
              status, rows_read=None, rows_written=None, error_message=None):
-    # Logs on its own connection so a rollback doesn't wipe the audit trail.
+    # Own connection so a rollback doesn't wipe the log entry.
     log_cur.execute(
         """
         INSERT INTO ops.etl_run_log
@@ -70,20 +62,19 @@ def risk_tier(prob: float) -> str:
     return "Low"
 
 
-def load_features(cur) -> pd.DataFrame:
-    query = "SELECT * FROM rpt.vw_student_risk_features"
-    cur.execute(query)
+def load_view(cur, view_name: str) -> pd.DataFrame:
+    cur.execute(f"SELECT * FROM {view_name}")
     cols = [c[0] for c in cur.description]
     rows = cur.fetchall()
     return pd.DataFrame.from_records(rows, columns=cols)
 
 
-def train_and_evaluate(df: pd.DataFrame):
-    feature_cols = [c for c in df.columns
+def train_and_evaluate(training_df: pd.DataFrame):
+    feature_cols = [c for c in training_df.columns
                      if c not in KEY_COLUMNS + [TARGET_COLUMN]]
 
-    X = df[feature_cols].astype(float).values
-    y = df[TARGET_COLUMN].astype(int).values
+    X = training_df[feature_cols].astype(float).values
+    y = training_df[TARGET_COLUMN].astype(int).values
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.25, stratify=y, random_state=RANDOM_STATE
@@ -91,7 +82,7 @@ def train_and_evaluate(df: pd.DataFrame):
 
     results = {}
 
-    # Logistic regression needs scaled inputs to converge properly.
+    # Logreg needs scaling to converge properly.
     scaler = StandardScaler().fit(X_train)
     X_train_s = scaler.transform(X_train)
     X_test_s = scaler.transform(X_test)
@@ -106,7 +97,6 @@ def train_and_evaluate(df: pd.DataFrame):
         "metrics": _score(y_test, lr_pred, lr_prob),
     }
 
-    # GBM doesn't need scaling.
     gb = GradientBoostingClassifier(
         n_estimators=200, max_depth=3, random_state=RANDOM_STATE
     )
@@ -121,7 +111,6 @@ def train_and_evaluate(df: pd.DataFrame):
 
     _report(results)
 
-    # Pick by AUC - we care about ranking students, not a hard cutoff.
     winner_name = max(results, key=lambda k: results[k]["metrics"]["auc"])
     return winner_name, results[winner_name], feature_cols
 
@@ -146,14 +135,14 @@ def _report(results: dict):
               f"{m['precision']:>10.3f} {m['recall']:>8.3f}")
 
 
-def score_all_students(winner: dict, feature_cols: list, df: pd.DataFrame):
-    X_all = df[feature_cols].astype(float).values
+def score_all_students(winner: dict, feature_cols: list, scoring_df: pd.DataFrame):
+    X_all = scoring_df[feature_cols].astype(float).values
     if winner["scaler"] is not None:
         X_all = winner["scaler"].transform(X_all)
     probs = winner["model"].predict_proba(X_all)[:, 1]
 
     return pd.DataFrame({
-        "student_key": df["student_key"].values,
+        "student_key": scoring_df["student_key"].values,
         "predicted_probability": probs,
         "predicted_class": (probs >= 0.5).astype(int),
         "risk_tier": [risk_tier(p) for p in probs],
@@ -166,8 +155,7 @@ def write_scores(cur, batch_id, winner_name, scores_df):
          float(r.predicted_probability), int(r.predicted_class), r.risk_tier)
         for r in scores_df.itertuples()
     ]
-    # Row-by-row binding - fast_executemany has type-inference issues
-    # with mixed columns. Speed doesn't matter at 4k rows.
+    # fast_executemany off - type inference issues on mixed columns.
     cur.fast_executemany = False
     cur.executemany(
         """
@@ -194,15 +182,24 @@ def main():
 
     try:
         started = datetime.now(timezone.utc)
-        print("Loading features...")
-        df = load_features(cur)
-        print(f"  Loaded {len(df)} student rows.")
-        log_step(log_cur, batch_id, "load_features", "rpt.vw_student_risk_features",
-                  started, "Succeeded", rows_read=len(df), rows_written=len(df))
+        print("Loading training set...")
+        training_df = load_view(cur, "rpt.vw_student_risk_training")
+        print(f"  Loaded {len(training_df)} rows for training.")
+        log_step(log_cur, batch_id, "load_training", "rpt.vw_student_risk_training",
+                  started, "Succeeded",
+                  rows_read=len(training_df), rows_written=len(training_df))
+
+        started = datetime.now(timezone.utc)
+        print("Loading scoring set...")
+        scoring_df = load_view(cur, "rpt.vw_student_risk_features")
+        print(f"  Loaded {len(scoring_df)} rows for scoring.")
+        log_step(log_cur, batch_id, "load_scoring", "rpt.vw_student_risk_features",
+                  started, "Succeeded",
+                  rows_read=len(scoring_df), rows_written=len(scoring_df))
 
         started = datetime.now(timezone.utc)
         print("\nTraining models...")
-        winner_name, winner, feature_cols = train_and_evaluate(df)
+        winner_name, winner, feature_cols = train_and_evaluate(training_df)
         print(f"\nSelected: {winner_name} "
               f"(test AUC = {winner['metrics']['auc']:.3f})")
         log_step(log_cur, batch_id, "train_models", "in-memory",
@@ -210,8 +207,8 @@ def main():
                   error_message=f"selected {winner_name} AUC={winner['metrics']['auc']:.3f}")
 
         started = datetime.now(timezone.utc)
-        print("\nScoring all students...")
-        scores = score_all_students(winner, feature_cols, df)
+        print("\nScoring all eligible students...")
+        scores = score_all_students(winner, feature_cols, scoring_df)
         tier_counts = scores["risk_tier"].value_counts().to_dict()
         print(f"  Risk tier distribution: {tier_counts}")
         log_step(log_cur, batch_id, "score_students", "in-memory",
