@@ -1,14 +1,7 @@
 /*==============================================================
   MissionImpactDW - Refactor: split feature view from training view
-  Purpose: The original vw_student_risk_features had two jobs -
-           serving features for training AND for scoring - and
-           filtered out currently-enrolled students so it could
-           carry the target column. That meant students without
-           a resolved outcome were unreachable to the scoring
-           pipeline, which is exactly the population you'd most
-           want early-warning scores for.
 
-           This refactor splits it into two views with one job each:
+  Purpose: split vw_student_risk_features into two views:
 
              rpt.vw_student_risk_features
                - one row per eligible student
@@ -35,15 +28,6 @@ GO
   PURPOSE: Features for the scoring pipeline. Every student
            who has at least a first-term record is eligible,
            regardless of whether their outcome is resolved.
-           Currently-enrolled students score too - that's the
-           whole point of an early-warning model.
-
-  Feature notes:
-    - Term 1 features only. Using term 2 to predict dropout
-      would be leakage.
-    - No target column. Adding one would make it easy to
-      accidentally train against the whole set including
-      still-enrolled students, contaminating the label.
 --------------------------------------------------------------*/
 CREATE OR ALTER VIEW rpt.vw_student_risk_features AS
 SELECT
@@ -67,7 +51,7 @@ SELECT
     ISNULL(t1.approval_rate, 0)              AS sem1_approval_rate,
     ISNULL(t1.units_without_evals, 0)          AS sem1_units_without_evals,
 
-    -- Macro indicators (nullable via LEFT JOIN)
+    -- Macro indicators 
     ISNULL(o.unemployment_rate, 0)  AS unemployment_rate,
     ISNULL(o.inflation_rate, 0)      AS inflation_rate,
     ISNULL(o.gdp, 0)                  AS gdp
@@ -85,14 +69,7 @@ GO
   rpt.vw_student_risk_training
   --------------------------------------------------------------
   GRAIN: one row per student with a resolved outcome.
-  PURPOSE: Training set. Same features as the scoring view,
-           plus the target column, restricted to students whose
-           outcome is known.
-
-  This view IS the model's ground truth. Joining features to
-  target here (in SQL, versioned, reviewable) rather than in
-  Python means the training label definition is auditable and
-  can't drift from the rest of the warehouse.
+  PURPOSE: Training set. 
 --------------------------------------------------------------*/
 CREATE OR ALTER VIEW rpt.vw_student_risk_training AS
 SELECT
