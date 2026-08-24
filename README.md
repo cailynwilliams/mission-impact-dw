@@ -74,9 +74,9 @@ OPERATIONS (ops)
 
 **Donations have a raw view and a clean view.** Raw includes everything. Clean filters out anything the outlier check flagged. Dashboards use clean, audits use raw, and a reconciliation query checks that raw total equals clean total plus what got excluded.
 
-**Model features are a SQL view, not a notebook cell.** Same reason business logic goes in SQL views instead of DAX — it's one definition, reused by training and scoring, and anyone can read it without opening Python or Power BI.
+**Model features are a SQL view, not a notebook cell.** Same reason business logic goes in SQL views instead of DAX. It's one definition, reused by training and scoring, and anyone can read it without opening Python or Power BI.
 
-**Feature view and training view are two different views.** Features covers every student who can be scored. Training is a subset — only students with a resolved outcome, with the target column attached. Originally these were one view, which meant currently enrolled students had no outcome yet and got excluded entirely. That's backwards for a model whose whole job is flagging risk before the outcome happens. Split them once I caught it.
+**Feature view and training view are two different views.** Features covers every student who can be scored. Training is a subset, only students with a resolved outcome, with the target column attached. Originally these were one view, which meant currently enrolled students had no outcome yet and got excluded entirely. That's backwards for a model whose whole job is flagging risk before the outcome happens. Split them once I caught it.
 
 **Predictions go into a fact table.** Not a pickle file, not a CSV. `dw.fact_student_risk_score` gets a new row per student per scoring run, tagged with a UUID, so old and new model versions sit side by side and you can query what the model said about any student on any date.
 
@@ -120,7 +120,7 @@ Trained logistic regression and gradient boosting on a 75/25 split of `rpt.vw_st
 | Actually graduated | 2,560 | 443 |
 | Actually dropped out | 214 | 1,207 |
 
-Catches 85% of actual dropouts. When it flags someone, it's right about 73% of the time. Recall matters more here than precision — a false positive is one extra conversation with a staff member, a false negative is a student who needed help and didn't get flagged.
+Catches 85% of actual dropouts. When it flags someone, it's right about 73% of the time. Recall matters more here than precision. A false positive is one extra conversation with a staff member. A false negative is a student who needed help and didn't get flagged.
 
 Scoring runs against all 4,424 eligible students, including students still enrolled, and writes to `dw.fact_student_risk_score` with a UUID for the run.
 
@@ -189,10 +189,10 @@ Made up: program names. The Kaggle codes are anonymized numbers (1–17) with no
 
 ## What I'd do with more time
 
-- Role-based access control — separate roles for analyst (read-only), ETL service account, admin. Currently everything runs as the DBA. Didn't build this out since it doesn't mean much on a single-user database.
+- Role-based access control: separate roles for analyst (read-only), ETL service account, admin. Currently everything runs as the DBA. Didn't build this out since it doesn't mean much on a single-user database.
 - A real performance tuning case study. At 2,500 rows the optimizer's already fast, so there's nothing to show. Would need millions of rows to make indexing and query rewrites actually matter.
 - SCD Type 2 on dimensions that currently overwrite in place. Would matter for donor giving-tier history or employee role changes over time.
-- Real orchestration instead of running scripts by hand — SQL Server Agent, Airflow, or Azure Data Factory, with scheduling and alerting.
+- Real orchestration instead of running scripts by hand, through something like SQL Server Agent, Airflow, or Azure Data Factory, with scheduling and alerting.
 - A retraining schedule for the model, plus drift monitoring on the features.
 - A real student ID from the source system. Right now it's generated at load time based on row order, which only works because the source file doesn't change.
 
