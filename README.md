@@ -1,145 +1,128 @@
 # MissionImpactDW
 
-A data warehouse, ETL pipeline, governance layer, and predictive analytics stack for a fictional nonprofit ("Mission Impact"). Built in SQL Server, Python, and Power BI.
+A data warehouse, ETL pipeline, governance layer, and predictive model for a fictional nonprofit called Mission Impact. Built in SQL Server, Python, and Power BI.
 
-This project models a full analytics platform: raw data comes in from a few source systems, gets transformed into a warehouse, gets exposed through documented views, gets checked for quality on every load, and powers both a dashboard and a predictive model. Everything is version controlled and can be rebuilt from scratch by running the scripts in order.
+Raw data comes in from a few source systems, gets transformed into a warehouse, gets exposed through documented views, gets checked for quality on every load, and powers a dashboard and a dropout risk model. Everything's version controlled and can be rebuilt by running the scripts in order.
 
 ---
 
-## What this project demonstrates
+## What's in here
 
-| Area | Where it lives |
+| Area | Where |
 |---|---|
 | Warehouse architecture | `sql/01`–`sql/04`: staging, dimensions, facts, date dimension |
-| ETL pipeline (Python) | `etl/load_staging.py`: loads CSVs into `stg.*`, logs on its own connection |
+| ETL pipeline | `etl/load_staging.py`: loads CSVs into `stg.*` |
 | Idempotent transforms | `sql/06`, `sql/07`: MERGE upserts, unique indexes on business keys |
 | Dimensional modeling | Star schema, surrogate keys, Unknown members for orphaned rows |
-| Data quality framework | `sql/08`: 13 checks across 6 categories, logged to `ops.data_quality_result` |
-| Governed reporting layer | `sql/09`–`sql/11`: documented views, one definition per metric |
-| Raw/clean view pattern | `sql/11`: donations exposed two ways, with a reconciliation check |
-| Anomaly handling | Outlier donations excluded from reporting views, kept in an audit view |
-| Predictive analytics | `sql/13`, `sql/14`, `etl/train_and_score_risk_model.py`: features in SQL, predictions in a fact table |
-| Model comparison | Logistic regression vs. gradient boosting, selected by test AUC |
-| Power BI semantic model | `powerbi/mission_impact_dashboard.pbix`: explicit measures, hidden internal fields |
-| BI dashboard | 3 pages: Executive Overview, Data Quality, Student Risk |
+| Data quality checks | `sql/08`: 13 checks, logged to `ops.data_quality_result` |
+| Reporting views | `sql/09`–`sql/11`: one definition per metric |
+| Predictive model | `sql/13`, `sql/14`, `etl/train_and_score_risk_model.py` |
+| Power BI dashboard | `powerbi/mission_impact_dashboard.pbix`: 3 pages |
 
 ---
 
 ## Architecture
 
 ```
-Source data (CSV)                        Source systems
-  ├── student_dropout_raw.csv              Kaggle: real academic data
-  ├── donors.csv, donations.csv            Faker: synthetic Development data
-  ├── employees.csv, staff_hours.csv       Faker: synthetic HR data
-  └── course_lookup (inline in SQL)        Static reference table
+Source data (CSV)
+  ├── student_dropout_raw.csv     Kaggle: real academic data
+  ├── donors.csv, donations.csv   Faker: synthetic Development data
+  ├── employees.csv, staff_hours.csv   Faker: synthetic HR data
+  └── course_lookup (inline SQL) Static reference table
 
         │
         ▼
 
-STAGING  (stg schema)                    Landing zone
-  - NVARCHAR everywhere                    types are loose on purpose
-  - Truncate and reload per run             not history, safe to rerun
-  - Every row stamped with load_batch_id    full lineage
+STAGING (stg)
+  NVARCHAR everywhere, truncate and reload each run, every row stamped
+  with a load_batch_id
 
-        │  MERGE upserts (idempotent)
+        │  MERGE
         ▼
 
-WAREHOUSE  (dw schema)                   Star schema
-  - Dim: student, donor, employee,          every dim has an Unknown
-         department, program, date          member (key = -1) for
-  - Fact: student_term (unpivoted),         orphaned foreign keys
-          student_outcome, donation,
-          staff_hours, student_risk_score
-  - PERSISTED computed columns              approval_rate, is_dropout
-  - Unique indexes on business keys         enforce grain and idempotency
+WAREHOUSE (dw)
+  Star schema. Dimensions for student, donor, employee, department,
+  program, date. Facts for student_term (unpivoted), student_outcome,
+  donation, staff_hours, student_risk_score. Every dimension has an
+  Unknown member at key -1.
 
-        │  CREATE OR ALTER VIEW
+        │  views
         ▼
 
-REPORTING  (rpt schema)                  Governed semantic layer
-  - Every KPI defined once                  single source of truth
-  - Header block = data dictionary          documented inline
-  - Raw + Clean pairs where needed          donations before and after
-                                            outlier filter, both exposed,
-                                            with a reconciliation check
-        │
-        ├──▶ Power BI (Import mode)      Executive Overview
-        │                                Data Quality
-        │                                Student Risk
-        │
-        └──▶ Predictive model            two-view design:
-                                         features (all scorable students)
-                                         and training (subset with target)
+REPORTING (rpt)
+  Governed views, one definition per metric. Raw and clean pairs where
+  it matters (donations).
 
-OPERATIONS  (ops schema)                 runs alongside everything
-  - etl_run_log                            every step timed and logged
-  - data_quality_result                    13 checks, pass/fail history
+        ├──▶ Power BI: Executive Overview, Data Quality, Student Risk
+        └──▶ Predictive model: features view + training view
+
+OPERATIONS (ops)
+  etl_run_log and data_quality_result run alongside everything else.
 ```
 
 ---
 
-## Key design decisions
+## Why some of this is built the way it is
 
-**Staging columns are NVARCHAR, not typed.** Source files often contain bad values. A typed staging column fails on the first bad row and tells you nothing about which row it was. NVARCHAR staging accepts the data as-is, a data quality check reports what's wrong, and the warehouse layer converts types on the way out using `TRY_CONVERT`, so one bad row doesn't fail the whole load.
+**Staging columns are NVARCHAR, not typed.** Source files have bad values in them. A typed column throws a conversion error on the first bad row and tells you nothing useful. NVARCHAR takes it in as-is, a data quality check flags what's wrong, and the warehouse casts types on the way out with `TRY_CONVERT`.
 
-**Every dimension has an Unknown member at key -1.** If a donation references a `donor_id` that doesn't exist in the donor table, there are three options: drop the row, fail the load, or point the row at Unknown. This project uses Unknown. The dollar amount stays in the totals, and the orphaned row is visible to anyone checking for it.
+**Dimensions have an Unknown member at key -1.** A donation with a `donor_id` that doesn't exist gets pointed at Unknown instead of dropped or failing the whole load. The dollar amount still shows up in totals, and it's visible to anyone checking for orphaned rows.
 
-**MERGE handles all transforms.** Every transform matches on a business key, updates if the row exists, inserts if it doesn't. Combined with unique indexes on business keys in the fact tables, this makes every script safe to rerun. A failed load can be fixed by just running the script again.
+**Transforms use MERGE.** Match on the business key, update if it exists, insert if it doesn't. Every script can run twice without duplicating anything.
 
-**The ETL log uses a separate database connection from the data load.** If the data load fails and rolls back, the log entry explaining the failure needs to survive that rollback. An earlier version logged on the same connection, so a rollback also erased the log entry describing what went wrong. Fixed by moving logging to its own connection, used the same approach in the ML pipeline.
+**The ETL log runs on its own connection, separate from the data load.** Found this out the hard way. First version logged failures on the same transaction as the load, so a rollback wiped out the log entry explaining what went wrong. Moved logging to its own connection after that.
 
-**Donations are exposed as both a raw view and a clean view.** `rpt.vw_donations_by_fiscal_year` includes everything, outliers included. `rpt.vw_donations_by_fiscal_year_clean` excludes anything flagged by the data quality check (donations over $100k). Dashboards use the clean view. Audits use the raw view. A reconciliation query checks that `raw total = clean total + excluded total` on every run, so if the filter and the audit view ever get out of sync, it shows up immediately.
+**Donations have a raw view and a clean view.** Raw includes everything. Clean filters out anything the outlier check flagged. Dashboards use clean, audits use raw, and a reconciliation query checks that raw total equals clean total plus what got excluded.
 
-**Model features are defined in SQL, not in a notebook.** `rpt.vw_student_risk_features` holds the feature logic. It's version controlled and reused by both training and scoring, the same reasoning behind putting business logic in SQL views instead of DAX measures. SQL can be reviewed and tested without opening Power BI or a notebook.
+**Model features are a SQL view, not a notebook cell.** Same reason business logic goes in SQL views instead of DAX — it's one definition, reused by training and scoring, and anyone can read it without opening Python or Power BI.
 
-**Feature view and training view are separate.** `vw_student_risk_features` returns every student eligible for scoring, with no target column. `vw_student_risk_training` is a subset: students with a resolved outcome (Dropout or Graduate), with the target column included. This split matters because an early-warning model needs to score students who are still enrolled. A single combined view that required a known outcome would exclude exactly the students the model is meant to help.
+**Feature view and training view are two different views.** Features covers every student who can be scored. Training is a subset — only students with a resolved outcome, with the target column attached. Originally these were one view, which meant currently enrolled students had no outcome yet and got excluded entirely. That's backwards for a model whose whole job is flagging risk before the outcome happens. Split them once I caught it.
 
-**Predictions are written to a fact table, not saved to a file.** `dw.fact_student_risk_score` treats each prediction as a row like any other fact in the warehouse. Every scoring run gets a UUID, so multiple model versions can exist side by side. Checking what the model predicted for a given student, and what actually happened, is a single SQL query.
+**Predictions go into a fact table.** Not a pickle file, not a CSV. `dw.fact_student_risk_score` gets a new row per student per scoring run, tagged with a UUID, so old and new model versions sit side by side and you can query what the model said about any student on any date.
 
 ---
 
 ## Data quality
 
-13 automated checks run after every load, covering completeness, uniqueness, validity, consistency, timeliness, and accuracy (via range checks). Results are logged to `ops.data_quality_result` and shown on a dashboard page.
+13 checks, covering completeness, uniqueness, validity, consistency, timeliness, and range checks. Results go to `ops.data_quality_result` and show up on a dashboard page.
 
-The synthetic data generator seeds known problems on purpose, so these checks have something real to catch:
+The synthetic data has real problems seeded into it on purpose:
 
-- ~44 donations reference a `donor_id` that doesn't exist in the donor table (orphan foreign key)
-- ~25 exact duplicate donations (uniqueness)
-- ~21 donors with no email on file (completeness — informational, nulls are expected here)
-- ~5 employees with no department listed (completeness — routed to Unknown department)
-- ~12 donations with amounts between $1M and $10M (validity — outliers)
+- ~44 donations pointing at a `donor_id` that doesn't exist
+- ~25 exact duplicate donations
+- ~21 donors with no email
+- ~5 employees with no department
+- ~12 donations between $1M and $10M, way outside normal range
 
-Current pass rate: 11 of 13. The two failing checks are the duplicate check and the outlier check, and they're supposed to fail, since they're catching problems that were deliberately introduced.
+11 of 13 checks pass. The two that fail are the duplicate check and the outlier check, and they're supposed to fail, since that's exactly what they're built to catch.
 
 ---
 
 ## Predictive model
 
-**Task:** binary classification. Predict whether a student will drop out, using only first-term performance and demographics.
+Binary classification. Predicts whether a student drops out, using only first-term grades and demographics.
 
-**Why only first-term data:** using second-term data would leak the outcome. By the time second-term grades exist, the result is basically already known. An early-warning model has to rely only on information available before the outcome happens.
+Only first term, because using second-term data would leak the answer. By the time second-term grades exist, you already basically know the outcome.
 
-**Approach:** train logistic regression and gradient boosting on a 75/25 stratified split of `rpt.vw_student_risk_training` (3,630 students with a resolved outcome). Keep whichever model scores higher on test AUC. The two models scored nearly identically, which suggests the relationship between the features and the outcome is close to linear.
+Trained logistic regression and gradient boosting on a 75/25 split of `rpt.vw_student_risk_training` (3,630 students with a known outcome), kept whichever scored higher on test AUC. They came out almost even, which says the relationship here is mostly linear.
 
-**Results (test set, 25% holdout):**
+**Test set results:**
 
 | Model | AUC | F1 | Precision | Recall |
 |---|---|---|---|---|
 | Logistic regression | 0.936 | 0.872 | 0.889 | 0.856 |
 | Gradient boosting | 0.937 | 0.869 | 0.881 | 0.856 |
 
-**Confusion matrix (3,630 students with a known outcome):**
+**Confusion matrix, full training population:**
 
 | | Predicted graduate | Predicted dropout |
 |---|---|---|
-| **Actually graduated** | 2,560 (TN) | 443 (FP) |
-| **Actually dropped out** | 214 (FN) | 1,207 (TP) |
+| Actually graduated | 2,560 | 443 |
+| Actually dropped out | 214 | 1,207 |
 
-The model correctly identifies 85% of actual dropouts (recall). When it flags a student as at-risk, it's correct 73% of the time (precision). Recall matters more than precision for this use case: a false positive costs one extra conversation with a staff member, a false negative means a student who needed help wasn't flagged. Overall accuracy is 85%, compared to 61% if you predicted every student would graduate.
+Catches 85% of actual dropouts. When it flags someone, it's right about 73% of the time. Recall matters more here than precision — a false positive is one extra conversation with a staff member, a false negative is a student who needed help and didn't get flagged.
 
-Scoring runs against `rpt.vw_student_risk_features`, which includes all 4,424 eligible students, including students still enrolled. Every scoring run writes to `dw.fact_student_risk_score` with a UUID, so past predictions stay queryable.
+Scoring runs against all 4,424 eligible students, including students still enrolled, and writes to `dw.fact_student_risk_score` with a UUID for the run.
 
 ---
 
@@ -147,7 +130,7 @@ Scoring runs against `rpt.vw_student_risk_features`, which includes all 4,424 el
 
 ```
 mission-impact-dw/
-├── sql/                        numbered scripts, run in order
+├── sql/
 │   ├── 01_create_staging.sql
 │   ├── 02_create_dimensions.sql
 │   ├── 03_create_facts.sql
@@ -162,77 +145,59 @@ mission-impact-dw/
 │   ├── 12_add_course_lookup.sql
 │   ├── 13_predictive_layer.sql
 │   └── 14_split_features_training_views.sql
-├── etl/                        Python pipelines
-│   ├── db_config.py             shared DB connection helper
-│   ├── generate_synthetic_data.py   seeded Faker generator
-│   ├── load_staging.py          loads CSVs into stg.*
-│   └── train_and_score_risk_model.py    feature view to predictions
+├── etl/
+│   ├── db_config.py
+│   ├── generate_synthetic_data.py
+│   ├── load_staging.py
+│   └── train_and_score_risk_model.py
 ├── powerbi/
-│   └── mission_impact_dashboard.pbix    3 pages
-├── data/
-│   └── raw/                    ignored by git, fully regenerable
+│   └── mission_impact_dashboard.pbix
+├── data/raw/          (gitignored, regenerable)
 └── README.md
 ```
 
 ---
 
-## Running from scratch
+## Running it
 
-Requires SQL Server (Developer Edition or higher), Python 3.11+, and the Kaggle "Predict Students' Dropout and Academic Success" dataset.
+Needs SQL Server, Python 3.11+, and the Kaggle "Predict Students' Dropout and Academic Success" dataset.
 
 ```bash
-# 1. Create the database and run the schema scripts, in order (SSMS)
-#    sql/01 through sql/14
+# run sql/01 through sql/14 in order in SSMS, then:
 
-# 2. Generate synthetic data (donors, donations, employees, staff hours)
 python etl/generate_synthetic_data.py
-
-# 3. Place the Kaggle CSV at data/raw/student_dropout_raw.csv
-
-# 4. Load everything into staging
+# drop the Kaggle CSV at data/raw/student_dropout_raw.csv
 python etl/load_staging.py
-
-# 5. Run the transform scripts (SSMS: 06, 07, in order)
-
-# 6. Run the data quality checks (SSMS: 08)
-
-# 7. Run the reporting and predictive view scripts (SSMS: 09, 10, 11, 12, 13, 14)
-
-# 8. Train and score the model
+# run sql/06-14 in SSMS
 python etl/train_and_score_risk_model.py
-
-# 9. Open powerbi/mission_impact_dashboard.pbix and refresh
+# open powerbi/mission_impact_dashboard.pbix and refresh
 ```
 
-Every step is idempotent and logs to `ops.etl_run_log`.
+Everything's idempotent. Everything logs to `ops.etl_run_log`.
 
 ---
 
-## What's synthetic and what's real
+## What's real and what's not
 
-- **Real:** the Kaggle student dropout dataset, about 4,400 rows, originally from UCI.
-- **Synthetic:** donors, donations, employees, staff hours. Generated with Faker using a fixed seed, so the same data is produced every time the generator runs.
-- **Fictional but plausible:** program names. The Kaggle source uses anonymized numeric course codes (1 through 17) with no published mapping to real programs. The names in `dw.dim_program` are placeholder names for a college-access nonprofit, not real programs. The mapping is defined in `sql/12_add_course_lookup.sql`.
+Real: the Kaggle student dropout dataset, ~4,400 rows, originally from UCI.
+
+Synthetic: donors, donations, employees, staff hours, generated with Faker on a fixed seed so it's reproducible.
+
+Made up: program names. The Kaggle codes are anonymized numbers (1–17) with no published mapping, so the names in `dw.dim_program` are placeholders, not real programs. Mapping's in `sql/12_add_course_lookup.sql`.
 
 ---
 
-## Known gaps / what I'd do next
+## What I'd do with more time
 
-Things that would need to change for a production system:
-
-- **Role-based access control.** A least-privilege model with a read-only analyst role, an ETL service account, and an admin role. Everything currently runs as the database owner. The design would grant access per schema, for example `GRANT SELECT ON SCHEMA::rpt TO analyst_role`. Not built out here since it wouldn't demonstrate anything meaningful on a single-user database.
-- **A real performance tuning case study.** At 2,500 donation rows, the query optimizer is already fast enough that a before/after comparison isn't meaningful. This would require a larger dataset, on the order of millions of rows, to actually show indexing strategy, query rewrites, and execution plan analysis.
-- **Slowly Changing Dimensions.** All dimensions currently use Type 1 (overwrite on update). Type 2, with effective dates, would matter for tracking history like donor giving-tier changes or employee role changes.
-- **Real orchestration.** The pipeline is currently a set of Python scripts run manually in sequence. A production version needs scheduling, dependency management, and alerting, for example through SQL Server Agent, Airflow, or Azure Data Factory.
-- **A retraining schedule for the model.** The model currently trains once and scores once. A production version would need a retraining schedule, drift monitoring on the input features, and a comparison step before replacing the current model with a new one.
-- **A real source for student IDs.** The Kaggle dataset has no student ID column. `student_id` is generated at load time based on row order (`STU00001`, `STU00002`, etc.). This is only stable because the source file doesn't change between runs. A production system would need an actual student ID from the source system.
+- Role-based access control — separate roles for analyst (read-only), ETL service account, admin. Currently everything runs as the DBA. Didn't build this out since it doesn't mean much on a single-user database.
+- A real performance tuning case study. At 2,500 rows the optimizer's already fast, so there's nothing to show. Would need millions of rows to make indexing and query rewrites actually matter.
+- SCD Type 2 on dimensions that currently overwrite in place. Would matter for donor giving-tier history or employee role changes over time.
+- Real orchestration instead of running scripts by hand — SQL Server Agent, Airflow, or Azure Data Factory, with scheduling and alerting.
+- A retraining schedule for the model, plus drift monitoring on the features.
+- A real student ID from the source system. Right now it's generated at load time based on row order, which only works because the source file doesn't change.
 
 ---
 
 ## Stack
 
-- **Database:** SQL Server 2022 Developer Edition
-- **Language:** T-SQL, Python 3.14
-- **Python libraries:** pandas, faker, pyodbc, scikit-learn
-- **BI:** Power BI Desktop
-- **Version control:** Git
+SQL Server 2022 Developer Edition, T-SQL, Python 3.14 (pandas, faker, pyodbc, scikit-learn), Power BI Desktop, Git.
