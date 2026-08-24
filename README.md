@@ -78,7 +78,7 @@ OPERATIONS (ops)
 
 **Feature view and training view are two different views.** Features covers every student who can be scored. Training is a subset, only students with a resolved outcome, with the target column attached. Originally these were one view, which meant currently enrolled students had no outcome yet and got excluded entirely. That's backwards for a model whose whole job is flagging risk before the outcome happens. Split them once I caught it.
 
-**Predictions go into a fact table.** Not a pickle file, not a CSV. `dw.fact_student_risk_score` gets a new row per student per scoring run, tagged with a UUID, so old and new model versions sit side by side and you can query what the model said about any student on any date.
+**Predictions go into a fact table.** `dw.fact_student_risk_score` gets a new row per student per scoring run, tagged with a UUID, so old and new model versions sit side by side and you can query what the model said about any student on any date.
 
 ---
 
