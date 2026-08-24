@@ -74,7 +74,7 @@ OPERATIONS (ops)
 
 **Donations have a raw view and a clean view.** Raw includes everything. Clean filters out anything the outlier check flagged. Dashboards use clean, audits use raw, and a reconciliation query checks that raw total equals clean total plus what got excluded.
 
-**Model features are a SQL view, not a notebook cell.** Same reason business logic goes in SQL views instead of DAX. It's one definition, reused by training and scoring, and anyone can read it without opening Python or Power BI.
+**Model features are a SQL view.** Same reason business logic goes in SQL views instead of DAX. It's one definition, reused by training and scoring, and anyone can read it without opening Python or Power BI.
 
 **Feature view and training view are two different views.** Features covers every student who can be scored. Training is a subset, only students with a resolved outcome, with the target column attached. Originally these were one view, which meant currently enrolled students had no outcome yet and got excluded entirely. That's backwards for a model whose whole job is flagging risk before the outcome happens. Split them once I caught it.
 
