@@ -10,7 +10,7 @@ Raw data comes in from a few source systems, gets transformed into a warehouse, 
 
 | Area | Where |
 |---|---|
-| Warehouse architecture | `sql/01`–`sql/04`: staging, dimensions, facts, date dimension |
+| Warehouse architecture | `sql/00`–`sql/04`: database setup, staging, dimensions, facts, date dimension |
 | ETL pipeline | `etl/load_staging.py`: loads CSVs into `stg.*` |
 | Idempotent transforms | `sql/06`, `sql/07`: MERGE upserts, unique indexes on business keys |
 | Dimensional modeling | Star schema, surrogate keys, Unknown members for orphaned rows |
@@ -64,21 +64,21 @@ OPERATIONS (ops)
 
 ## Why some of this is built the way it is
 
-**Staging columns are NVARCHAR, not typed.** Source files have bad values in them. A typed column throws a conversion error on the first bad row and tells you nothing useful. NVARCHAR takes it in as-is, a data quality check flags what's wrong, and the warehouse casts types on the way out with `TRY_CONVERT`.
+**Staging columns are NVARCHAR, not typed.** Source files have bad values in them. A typed column throws a conversion error on the first bad row and doesn't tell you which row it was. NVARCHAR takes it in as-is, a data quality check flags what's wrong, and the warehouse casts types on the way out with `TRY_CONVERT`.
 
-**Dimensions have an Unknown member at key -1.** A donation with a `donor_id` that doesn't exist gets pointed at Unknown instead of dropped or failing the whole load. The dollar amount still shows up in totals, and it's visible to anyone checking for orphaned rows.
+**Dimensions have an Unknown member at key -1.** A donation with a `donor_id` that doesn't exist points at Unknown instead of getting dropped or failing the whole load. The dollar amount still shows up in totals, and anyone checking for orphaned rows can find it.
 
 **Transforms use MERGE.** Match on the business key, update if it exists, insert if it doesn't. Every script can run twice without duplicating anything.
 
-**The ETL log runs on its own connection, separate from the data load.** Found this out the hard way. First version logged failures on the same transaction as the load, so a rollback wiped out the log entry explaining what went wrong. Moved logging to its own connection after that.
+**The ETL log runs on its own connection, separate from the data load.** Found this one the hard way. The first version logged failures on the same transaction as the load, so a rollback also wiped out the log entry that explained what went wrong. Moved logging to its own connection after that.
 
 **Donations have a raw view and a clean view.** Raw includes everything. Clean filters out anything the outlier check flagged. Dashboards use clean, audits use raw, and a reconciliation query checks that raw total equals clean total plus what got excluded.
 
-**Model features are a SQL view.** Same reason business logic goes in SQL views instead of DAX. It's one definition, reused by training and scoring, and anyone can read it without opening Python or Power BI.
+**Model features are a SQL view.** Same reason business logic goes in SQL views instead of DAX. One definition, reused by training and scoring, readable without opening Python or Power BI.
 
-**Feature view and training view are two different views.** Features covers every student who can be scored. Training is a subset, only students with a resolved outcome, with the target column attached. Originally these were one view, which meant currently enrolled students had no outcome yet and got excluded entirely. That's backwards for a model whose whole job is flagging risk before the outcome happens. Split them once I caught it.
+**Feature view and training view are two different views.** Features covers every student who can be scored. Training is a smaller set, only students with a resolved outcome, with the target column attached. These used to be one view, which meant currently enrolled students had no outcome yet and got left out entirely. That's backwards for a model whose whole job is flagging risk before the outcome happens. Caught it, split them.
 
-**Predictions go into a fact table.** `dw.fact_student_risk_score` gets a new row per student per scoring run, tagged with a UUID, so old and new model versions sit side by side and you can query what the model said about any student on any date.
+**Predictions go into a fact table.** `dw.fact_student_risk_score` gets a new row per student per scoring run, tagged with a UUID. Old and new model versions sit side by side, and you can look up what the model said about any student on any date.
 
 ---
 
@@ -94,7 +94,7 @@ The synthetic data has real problems seeded into it on purpose:
 - ~5 employees with no department
 - ~12 donations between $1M and $10M, way outside normal range
 
-11 of 13 checks pass. The two that fail are the duplicate check and the outlier check, and they're supposed to fail, since that's exactly what they're built to catch.
+11 of 13 checks pass. The two that fail are the duplicate check and the outlier check, and they're supposed to fail. That's the whole point of seeding them.
 
 ---
 
@@ -102,7 +102,7 @@ The synthetic data has real problems seeded into it on purpose:
 
 Binary classification. Predicts whether a student drops out, using only first-term grades and demographics.
 
-Only first term, because using second-term data would leak the answer. By the time second-term grades exist, you already basically know the outcome.
+Only first term, because using second-term data would leak the answer. By the time second-term grades exist, you basically already know how it ends.
 
 Trained logistic regression and gradient boosting on a 75/25 split of `rpt.vw_student_risk_training` (3,630 students with a known outcome), kept whichever scored higher on test AUC. They came out almost even, which says the relationship here is mostly linear.
 
@@ -113,14 +113,16 @@ Trained logistic regression and gradient boosting on a 75/25 split of `rpt.vw_st
 | Logistic regression | 0.936 | 0.872 | 0.889 | 0.856 |
 | Gradient boosting | 0.937 | 0.869 | 0.881 | 0.856 |
 
-**Confusion matrix, full training population:**
+**Confusion matrix, students with a known outcome (3,630):**
 
 | | Predicted graduate | Predicted dropout |
 |---|---|---|
-| Actually graduated | 2,560 | 443 |
+| Actually graduated | 2,110 | 99 |
 | Actually dropped out | 214 | 1,207 |
 
-Catches 85% of actual dropouts. When it flags someone, it's right about 73% of the time. Recall matters more here than precision. A false positive is one extra conversation with a staff member. A false negative is a student who needed help and didn't get flagged.
+Catches 85% of actual dropouts. When it flags someone as at risk, it's right 92% of the time. Recall matters more here than precision: a false positive just costs one extra conversation with a staff member, a false negative means a student who needed help never got flagged.
+
+A quick note on that table, because it's worth being upfront about: an earlier version of it was wrong. The view feeding it was treating currently-enrolled students as confirmed non-dropouts instead of leaving them out, so they were getting counted in the graduate column even though nobody actually knows their outcome yet. Once that got fixed and the matrix only counted students with a real, known outcome, the model's precision turned out to be better than what I'd first reported, not worse.
 
 Scoring runs against all 4,424 eligible students, including students still enrolled, and writes to `dw.fact_student_risk_score` with a UUID for the run.
 
@@ -131,6 +133,7 @@ Scoring runs against all 4,424 eligible students, including students still enrol
 ```
 mission-impact-dw/
 ├── sql/
+│   ├── 00_create_database.sql
 │   ├── 01_create_staging.sql
 │   ├── 02_create_dimensions.sql
 │   ├── 03_create_facts.sql
@@ -163,7 +166,7 @@ mission-impact-dw/
 Needs SQL Server, Python 3.11+, and the Kaggle "Predict Students' Dropout and Academic Success" dataset.
 
 ```bash
-# run sql/01 through sql/14 in order in SSMS, then:
+# run sql/00 through sql/14 in order in SSMS, then:
 
 python etl/generate_synthetic_data.py
 # drop the Kaggle CSV at data/raw/student_dropout_raw.csv
@@ -173,28 +176,28 @@ python etl/train_and_score_risk_model.py
 # open powerbi/mission_impact_dashboard.pbix and refresh
 ```
 
-Everything's idempotent. Everything logs to `ops.etl_run_log`.
+Everything's idempotent, and every step logs to `ops.etl_run_log`.
 
 ---
 
 ## What's real and what's not
 
-Real: the Kaggle student dropout dataset, ~4,400 rows, originally from UCI.
+Real: the Kaggle student dropout dataset, about 4,400 rows, originally from UCI.
 
-Synthetic: donors, donations, employees, staff hours, generated with Faker on a fixed seed so it's reproducible.
+Synthetic: donors, donations, employees, staff hours. Generated with Faker on a fixed seed, so it's the same data every time you run it.
 
-Made up: program names. The Kaggle codes are anonymized numbers (1–17) with no published mapping, so the names in `dw.dim_program` are placeholders, not real programs. Mapping's in `sql/12_add_course_lookup.sql`.
+Made up: program names. The Kaggle codes are anonymized numbers (1 through 17) with no published mapping, so the names in `dw.dim_program` are placeholders, not real programs. The mapping is in `sql/12_add_course_lookup.sql`.
 
 ---
 
 ## What I'd do with more time
 
-- Role-based access control: separate roles for analyst (read-only), ETL service account, admin. Currently everything runs as the DBA. Didn't build this out since it doesn't mean much on a single-user database.
-- A real performance tuning case study. At 2,500 rows the optimizer's already fast, so there's nothing to show. Would need millions of rows to make indexing and query rewrites actually matter.
-- SCD Type 2 on dimensions that currently overwrite in place. Would matter for donor giving-tier history or employee role changes over time.
-- Real orchestration instead of running scripts by hand, through something like SQL Server Agent, Airflow, or Azure Data Factory, with scheduling and alerting.
+- Role-based access control. Separate roles for analyst (read-only), ETL service account, admin. Everything currently runs as the DBA. Didn't build this out since it doesn't mean much on a single-user database.
+- A real performance tuning case study. At 2,500 rows the optimizer's already fast enough that there's nothing to show. Would need millions of rows before indexing and query rewrites actually made a difference.
+- SCD Type 2 on dimensions that currently just overwrite in place. Would matter for things like donor giving-tier history or employee role changes over time.
+- Real orchestration instead of running scripts by hand. Something like SQL Server Agent, Airflow, or Azure Data Factory, with actual scheduling and alerting.
 - A retraining schedule for the model, plus drift monitoring on the features.
-- A real student ID from the source system. Right now it's generated at load time based on row order, which only works because the source file doesn't change.
+- A real student ID from the source system. Right now it's generated at load time based on row order, which only holds up because the source file never changes.
 
 ---
 
