@@ -1,7 +1,10 @@
 /*==============================================================
   MissionImpactDW - Transform: stg -> dw (Dimensions)
   Purpose: Populate conformed dimensions from staging.
-  Notes:   Idempotent via MERGE
+  Notes:   Idempotent. MERGE updates existing rows instead of
+           duplicating them, so this is safe to re-run.
+
+  Run after load_staging.py has populated the stg.* tables.
 ==============================================================*/
 
 USE MissionImpactDW;
@@ -9,7 +12,9 @@ GO
 
 /*--------------------------------------------------------------
   dw.dim_donor
-  MERGE on donor_id
+  MERGE on the business key (donor_id). New donors get
+  inserted; donors that already exist get their attributes
+  refreshed (SCD Type 1 - overwrite, no history kept).
 --------------------------------------------------------------*/
 MERGE dw.dim_donor AS tgt
 USING (
@@ -38,7 +43,9 @@ GO
 
 /*--------------------------------------------------------------
   dw.dim_department
-  No business key collision risk 
+  Derived from distinct, non-null departments in the employee
+  extract. No business key collision risk - department names
+  ARE the key here.
 --------------------------------------------------------------*/
 MERGE dw.dim_department AS tgt
 USING (
@@ -55,7 +62,10 @@ GO
 
 /*--------------------------------------------------------------
   dw.dim_employee
-  MERGE on employee_id. 
+  MERGE on employee_id. Null/blank department in the source
+  resolves to the Unknown department (-1) rather than being
+  left as a broken reference - see the Unknown-member note in
+  02_create_dimensions.sql for why.
 --------------------------------------------------------------*/
 MERGE dw.dim_employee AS tgt
 USING (
@@ -95,6 +105,8 @@ GO
 /*--------------------------------------------------------------
   dw.dim_program
   Derived from distinct "course" values in the student extract.
+  program_name is the business key - each distinct course
+  string from the source becomes one program row.
 --------------------------------------------------------------*/
 MERGE dw.dim_program AS tgt
 USING (
@@ -111,7 +123,18 @@ GO
 
 /*--------------------------------------------------------------
   dw.dim_student
-  MERGE on student_id 
+  MERGE on student_id (generated during staging load - see
+  05_alter_student_raw.sql and load_staging.py for why).
+
+  Numeric-looking staging columns are NVARCHAR by design (staging
+  never assumes clean types), so every cast here uses TRY_CONVERT/
+  TRY_CAST rather than CONVERT/CAST: a value that fails to convert
+  becomes NULL instead of failing the whole batch. That trade-off
+  is deliberate - a handful of unparseable ages shouldn't block
+  4,424 students from loading. In production, TRY_-failures like
+  these are exactly what a data quality check should count and
+  report, not silently swallow - see the DQ script we'll build
+  next for how that gets surfaced.
 --------------------------------------------------------------*/
 MERGE dw.dim_student AS tgt
 USING (

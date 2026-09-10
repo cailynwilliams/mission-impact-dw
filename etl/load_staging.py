@@ -41,7 +41,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-import pyodbc
 
 from db_config import get_connection
 

@@ -128,7 +128,9 @@ SELECT
     r.predicted_probability     AS dropout_probability,
     r.risk_tier,
     r.predicted_class            AS predicted_dropout,
-    o.is_dropout                   AS actual_dropout,   -- null for still-enrolled
+    CASE WHEN o.outcome_status IN ('Dropout', 'Graduate')
+         THEN o.is_dropout
+         ELSE NULL END            AS actual_dropout,
     o.outcome_status                AS actual_outcome,
     lr.scored_at_utc                 AS score_generated_at,
     lr.model_version
@@ -138,7 +140,6 @@ JOIN dw.dim_student s           ON s.student_key = r.student_key
 LEFT JOIN dw.fact_student_outcome o ON o.student_key = r.student_key
 LEFT JOIN dw.dim_program p       ON p.program_key = o.program_key;
 GO
-
 
 PRINT 'Predictive layer objects created.';
 GO

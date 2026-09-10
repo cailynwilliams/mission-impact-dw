@@ -24,7 +24,6 @@ Output:
 """
 
 import random
-import uuid
 from datetime import date, timedelta
 from pathlib import Path
 

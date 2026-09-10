@@ -1,14 +1,16 @@
 /*==============================================================
   MissionImpactDW - Dimension Tables
   Purpose: Conformed dimensions for the warehouse layer.
-  Notes:   Idempotent. Run AFTER 01_create_staging.sql and
-           BEFORE 03_create_facts.sql (facts reference these).
+  Notes:   Idempotent.
 
   Conventions:
     - Surrogate key: <table>_key, INT IDENTITY, primary key.
     - Business key:  <table>_id, from the source system.
     - Every dimension carries an "Unknown" member with key -1
-    - SCD Type 1 (overwrite) throughout. 
+      so facts with missing/orphaned references can still load
+      without breaking referential integrity.
+    - SCD Type 1 (overwrite) throughout. Type 2 history is a
+      documented roadmap item, not implemented here.
 ==============================================================*/
 
 USE MissionImpactDW;
@@ -180,7 +182,18 @@ GO
 
 
 /*==============================================================
-  Every dimension gets a key = -1 "Unknown" row.
+  Unknown members
+  ---------------------------------------------------------------
+  Every dimension gets a key = -1 "Unknown" row. When a fact
+  arrives with a business key we cannot match (a donation for a
+  donor_id missing from the donor extract, say), the ETL points
+  it at -1 instead of dropping the row or failing the load.
+
+  This is deliberate: the donation still happened and its dollar
+  amount still belongs in the totals. Losing the row would make
+  revenue silently wrong. Pointing it at Unknown keeps the money
+  correct and leaves an auditable trail - a data quality check
+  counts rows on key -1 and flags the orphans for follow-up.
 ==============================================================*/
 
 SET IDENTITY_INSERT dw.dim_student ON;

@@ -1,13 +1,15 @@
 /*==============================================================
   MissionImpactDW - Data Quality Checks
-  Purpose: A battery of standard checks run after every load,
-           logged to ops.data_quality_result so results are
-           queryable history.
 
-  Severity convention:
-    'Error'   - data is wrong or unusable if this check fails.
-    'Warning' - worth knowing about, doesn't block the load.
-              
+  Runs after every load and writes results to
+  ops.data_quality_result so there's a history to look back on.
+
+  Covers completeness, uniqueness, validity, consistency,
+  accuracy, and timeliness.
+
+  Severity:
+    Error   - data is wrong or unusable
+    Warning - worth knowing about, doesn't block the load
 ==============================================================*/
 
 USE MissionImpactDW;
@@ -17,6 +19,9 @@ DECLARE @batch_id UNIQUEIDENTIFIER = NEWID();
 
 /*--------------------------------------------------------------
   CHECK 1 - Completeness: row count reconciliation
+  Staging row count should equal warehouse row count for each
+  source. A mismatch means rows were silently dropped somewhere
+  in the transform - the cheapest, highest-value check there is.
 --------------------------------------------------------------*/
 INSERT INTO ops.data_quality_result
     (load_batch_id, check_name, check_category, target_object,
@@ -69,6 +74,12 @@ SELECT
             = (SELECT COUNT(*) FROM dw.dim_employee WHERE employee_key <> -1)
          THEN 1 ELSE 0 END;
 
+-- fact_donation is EXPECTED to be smaller than stg.donation_raw, because
+-- we deliberately dedupe exact-duplicate donation_ids during the merge.
+-- So this check's "expected" isn't equality - it's stg_count minus the
+-- known duplicate count. Encoding that here (rather than just comparing
+-- for equality) is what makes this check meaningful instead of a false
+-- alarm every single run.
 INSERT INTO ops.data_quality_result
     (load_batch_id, check_name, check_category, target_object,
      severity, expected_value, actual_value, failed_row_count, check_passed)
@@ -129,15 +140,23 @@ FROM stg.donation_raw;
 
 
 /*--------------------------------------------------------------
-  CHECK 4 - Consistency
+  CHECK 4 - Orphaned foreign keys
+
+  Counts rows that got sent to the Unknown member (-1) because
+  their foreign key didn't match anything.
+
+  These always pass. Orphans get absorbed by design so the load
+  doesn't break, so a count isn't a failure. Watch for the
+  number jumping between runs, that means something changed
+  upstream.
 --------------------------------------------------------------*/
 INSERT INTO ops.data_quality_result
     (load_batch_id, check_name, check_category, target_object,
      severity, expected_value, actual_value, failed_row_count, check_passed)
 SELECT
     @batch_id, 'orphaned_donation_donor_fk', 'Consistency', 'dw.fact_donation.donor_key',
-    'Warning', '0 orphans (informational)',
-    CAST(COUNT(*) AS VARCHAR(20)), COUNT(*), 1
+    'Warning', 'count only',
+    CAST(COUNT(*) AS VARCHAR(20)), COUNT(*), 1   -- always passes, see note
 FROM dw.fact_donation WHERE donor_key = -1;
 
 INSERT INTO ops.data_quality_result
@@ -145,8 +164,8 @@ INSERT INTO ops.data_quality_result
      severity, expected_value, actual_value, failed_row_count, check_passed)
 SELECT
     @batch_id, 'orphaned_staff_hours_employee_fk', 'Consistency', 'dw.fact_staff_hours.employee_key',
-    'Warning', '0 orphans (informational)',
-    CAST(COUNT(*) AS VARCHAR(20)), COUNT(*), 1
+    'Warning', 'count only',
+    CAST(COUNT(*) AS VARCHAR(20)), COUNT(*), 1   -- always passes, see note
 FROM dw.fact_staff_hours WHERE employee_key = -1;
 
 
@@ -191,6 +210,9 @@ WHERE hours_logged IS NOT NULL
 /*--------------------------------------------------------------
   CHECK 6 - Timeliness: staging freshness
   Flags if the most recent staging load is older than expected.
+  Threshold set generously (7 days) since this is a manually-run
+  portfolio pipeline, not a nightly production job - in
+  production this would be tightened to match the real SLA.
 --------------------------------------------------------------*/
 INSERT INTO ops.data_quality_result
     (load_batch_id, check_name, check_category, target_object,
@@ -206,6 +228,10 @@ FROM stg.student_raw;
 GO
 
 
+/*==============================================================
+  SUMMARY - what you'd actually screenshot for a README or show
+  in an interview. One row per check, pass/fail, plain English.
+==============================================================*/
 SELECT
     check_name,
     check_category,
@@ -221,7 +247,7 @@ ORDER BY
     check_name;
 GO
 
---  a single number for a dashboard tile
+-- Overall pass rate - a single number for a dashboard tile
 SELECT
     COUNT(*) AS total_checks,
     SUM(CASE WHEN check_passed = 1 THEN 1 ELSE 0 END) AS checks_passed,

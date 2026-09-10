@@ -2,7 +2,9 @@
   MissionImpactDW - Fact Tables + Operations Tables
   Purpose: Transactional/measurement tables and the ETL/data
            quality logging infrastructure.
-  Notes:   Idempotent. Run AFTER 02_create_dimensions.sql.
+  Notes:   Idempotent.
+
+  Each fact table's grain is stated in its comment block.
 ==============================================================*/
 
 USE MissionImpactDW;
@@ -12,8 +14,12 @@ GO
   dw.fact_student_term
   GRAIN: one row per student per academic semester.
 
-  Delivers one flat row per student with separate
-  1st-sem and 2nd-sem columns. 
+  The source delivers one flat row per student with separate
+  1st-sem and 2nd-sem columns. The ETL unpivots that into two
+  rows. This is the key modeling decision in the warehouse:
+  it converts a static snapshot into something with a time
+  axis, which is what makes term-over-term trend features
+  possible for the risk model.
 --------------------------------------------------------------*/
 IF OBJECT_ID('dw.fact_student_term','U') IS NULL
 BEGIN
@@ -62,7 +68,10 @@ GO
   dw.fact_student_outcome
   GRAIN: one row per student.
 
-  Holds the final academic outcome. 
+  Holds the final academic outcome. This is the ML target.
+  Kept separate from dim_student because an outcome is a
+  measured result, not a descriptive attribute - and because
+  the modeling layer needs a clean, isolated label table.
 --------------------------------------------------------------*/
 IF OBJECT_ID('dw.fact_student_outcome','U') IS NULL
 BEGIN
@@ -160,7 +169,8 @@ GO
 
 /*==============================================================
   OPERATIONS LAYER
-  ETL run logging and data quality results. 
+  ETL run logging and data quality results. A pipeline you
+  cannot observe is a pipeline you cannot debug.
 ==============================================================*/
 
 /*--------------------------------------------------------------
@@ -197,8 +207,9 @@ GO
   ops.data_quality_result
   GRAIN: one row per data quality check per run.
 
-  Severity determines behavior: 'Error' fails the pipeline,
-  'Warning' logs and continues.
+  Severity drives behavior: 'Error' fails the pipeline,
+  'Warning' logs and continues. Encoding that here instead of
+  in the Python keeps the rules visible and auditable.
 --------------------------------------------------------------*/
 IF OBJECT_ID('ops.data_quality_result','U') IS NULL
 BEGIN
