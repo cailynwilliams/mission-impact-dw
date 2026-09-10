@@ -1,8 +1,8 @@
 # MissionImpactDW
 
-A data warehouse, ETL pipeline, governance layer, and predictive model for a fictional nonprofit called Mission Impact. Built in SQL Server, Python, and Power BI.
+A data platform for a fictional nonprofit called Mission Impact. It pulls student, donor, and staff data into one governed warehouse, checks that data automatically for quality problems, and reports on it through Power BI. A dropout risk model sits on top as one thing the platform can do once the data underneath it is trustworthy.
 
-Raw data comes in from a few source systems, gets transformed into a warehouse, gets exposed through documented views, gets checked for quality on every load, and powers a dashboard and a dropout risk model. Everything's version controlled and can be rebuilt by running the scripts in order.
+Built in SQL Server, Python, and Power BI. Everything's version controlled and can be rebuilt from scratch by running the scripts in order.
 
 ---
 
@@ -62,7 +62,7 @@ OPERATIONS (ops)
 
 ---
 
-## Why some of this is built the way it is
+## Design decisions
 
 **Staging columns are NVARCHAR, not typed.** Source files have bad values in them. A typed column throws a conversion error on the first bad row and doesn't tell you which row it was. NVARCHAR takes it in as-is, a data quality check flags what's wrong, and the warehouse casts types on the way out with `TRY_CONVERT`.
 
@@ -70,13 +70,13 @@ OPERATIONS (ops)
 
 **Transforms use MERGE.** Match on the business key, update if it exists, insert if it doesn't. Every script can run twice without duplicating anything.
 
-**The ETL log runs on its own connection, separate from the data load.** Found this one the hard way. The first version logged failures on the same transaction as the load, so a rollback also wiped out the log entry that explained what went wrong. Moved logging to its own connection after that.
+**The ETL log runs on its own connection, separate from the data load.** This came from an actual failure. The first version logged failures on the same transaction as the load, so when something failed and rolled back, it took the log entry explaining the failure down with it too. Moved logging to its own connection so that can't happen again.
 
 **Donations have a raw view and a clean view.** Raw includes everything. Clean filters out anything the outlier check flagged. Dashboards use clean, audits use raw, and a reconciliation query checks that raw total equals clean total plus what got excluded.
 
 **Model features are a SQL view.** Same reason business logic goes in SQL views instead of DAX. One definition, reused by training and scoring, readable without opening Python or Power BI.
 
-**Feature view and training view are two different views.** Features covers every student who can be scored. Training is a smaller set, only students with a resolved outcome, with the target column attached. These used to be one view, which meant currently enrolled students had no outcome yet and got left out entirely. That's backwards for a model whose whole job is flagging risk before the outcome happens. Caught it, split them.
+**Feature view and training view are two different views.** Features covers every student who can be scored. Training is a smaller set, only students with a resolved outcome, with the target column attached. These used to be one view, which meant currently enrolled students had no outcome yet and got left out entirely. That didn't make sense for a model whose whole job is flagging risk before the outcome happens, since those are exactly the students it needs to score. I split the views once I noticed the problem, and retrained the model on the corrected data.
 
 **Predictions go into a fact table.** `dw.fact_student_risk_score` gets a new row per student per scoring run, tagged with a UUID. Old and new model versions sit side by side, and you can look up what the model said about any student on any date.
 
@@ -94,7 +94,7 @@ The synthetic data has real problems seeded into it on purpose:
 - ~5 employees with no department
 - ~12 donations between $1M and $10M, way outside normal range
 
-11 of 13 checks pass. The two that fail are the duplicate check and the outlier check, and they're supposed to fail. That's the whole point of seeding them.
+11 of 13 checks pass. The two that fail are the duplicate check and the outlier check. They're supposed to fail, since the problems they're catching were seeded into the data on purpose.
 
 ---
 
@@ -122,7 +122,7 @@ Trained logistic regression and gradient boosting on a 75/25 split of `rpt.vw_st
 
 Catches 85% of actual dropouts. When it flags someone as at risk, it's right 92% of the time. Recall matters more here than precision: a false positive just costs one extra conversation with a staff member, a false negative means a student who needed help never got flagged.
 
-A quick note on that table, because it's worth being upfront about: an earlier version of it was wrong. The view feeding it was treating currently-enrolled students as confirmed non-dropouts instead of leaving them out, so they were getting counted in the graduate column even though nobody actually knows their outcome yet. Once that got fixed and the matrix only counted students with a real, known outcome, the model's precision turned out to be better than what I'd first reported, not worse.
+An earlier version of this table was wrong. The view feeding it was treating currently-enrolled students as confirmed non-dropouts instead of leaving them out, so they were getting counted in the graduate column even though nobody actually knows their outcome yet. Once that got fixed and the matrix only counted students with a real, known outcome, the model's precision turned out to be better than what had first been reported.
 
 Scoring runs against all 4,424 eligible students, including students still enrolled, and writes to `dw.fact_student_risk_score` with a UUID for the run.
 
